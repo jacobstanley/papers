@@ -1,0 +1,27 @@
+%!TEX root = ../Main.tex
+\section{Introdution}
+
+Quickcheck\cite{claessen:quickcheck} is awesome. Give a short into to quickcheck. A key part of the quick check library design is that counterexamples can be shrunk into smaller ones. The Aribrary type class defines two separate methods, one for generating counter examples and one for shrinking them. However, in practice programmers do not provide shrink functions in their arbitrary instances \TODO{back this up with data from Hackage}. 
+
+\begin{code}
+  class Arbitrary a where
+   arbitrary :: Gen a
+   shrink    :: a -> [a]
+\end{code}
+
+
+
+
+\emph{Semantic Shrinking}. Shrinks should be based on the original generator, not just on the structural type. We often want to shrink to a "nice" value rather than the structurally smallest one. For example, dates can be shrunk to a value like 2001-01-01 rather than 0001-01-01. In practice we can handle this using newtype wrappers, but writing code to wrap and unwrap values is tedious. For example, consider a map from @Foo@ to @Bar@ \TODO{better example}. 
+
+\emph{Splitting} of the random number generator. Shrinking the number of elements in collection structure should effect now new sub-terms are generated. \TODO{need an example}.
+
+
+We make the following contributions:
+\begin{itemize}
+\item Our system automatically provides shinks when constructing arbitrary instances.
+
+\item Our system makes it easy to provide shrink functions that take into account the semantic meaning of the data, rather than just its structural type.
+
+\item The shrunk counterexamples produced by our system are guaranteed to be coherent(?). Relate this back to example.
+\end{itemize}

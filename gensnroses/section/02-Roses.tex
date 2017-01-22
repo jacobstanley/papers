@@ -1,0 +1,13 @@
+%!TEX root = ../Main.tex
+\section{Everything is Roses}
+
+Here is our new definition of the @Arbitrary@ class.
+
+\begin{code}
+class Arbitrary a where
+   arbitrary :: Gen (Tree a)
+\end{code}
+
+Our generator now produces a candidate value and a lazy tree of all its possible reductions, rather than just a single candidate at a time. Give the data type definition for @Tree@. Give some examples of trees.
+
+
