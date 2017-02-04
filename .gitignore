@@ -1,0 +1,25 @@
+# Mac
+.DS_Store
+
+# TeX
+*.texout
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.pdf
+
+# Haskell
+.cabal-sandbox/
+dist/
+tmp/
+gen/
+TAGS
+*.o
+*.hi
+*.chi
+*.chs.h
+*.gch
+cabal.sandbox.config
