@@ -1,0 +1,22 @@
+name:                rose
+version:             0.0
+synopsis:            Code for Gens'n'Roses
+homepage:            https://github.com/jystic/papers/tree/master/gensnroses
+license:             BSD3
+license-file:        LICENSE
+author:              Jacob Stanley
+maintainer:          Jacob Stanley <jacob@stanley.io>
+category:            Testing
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:    src
+  default-language:  Haskell2010
+
+  exposed-modules:   Rose
+
+  build-depends:     base
+                   , mmorph
+                   , random
+                   , transformers
