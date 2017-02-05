@@ -219,7 +219,7 @@ noShrink =
   mapGen pruneTree
 
 ------------------------------------------------------------------------
--- Combinators - Ranges
+-- Combinators - Range
 
 integral_ :: (Monad m, Integral a) => a -> a -> Gen m a
 integral_ lo hi =
@@ -234,6 +234,9 @@ integral lo hi =
 enum :: (Monad m, Enum a) => a -> a -> Gen (Tree m) a
 enum lo hi =
   fmap toEnum $ integral (fromEnum lo) (fromEnum hi)
+
+------------------------------------------------------------------------
+-- Combinators - Choice
 
 element :: Monad m => [a] -> Gen (Tree m) a
 element [] = error "Rose.element: used with empty list"
@@ -482,10 +485,8 @@ report n p =
     loop 0 0
 
 check :: MonadIO m => PropertyT m () -> m Report
-check p = do
-  seed <- liftIO newSeed
-  runGen seed $
-    report 100 p
+check =
+  sampleGen . report 100
 
 -- Try 'check prop_foo' to see what happens
 prop_foo :: Property
