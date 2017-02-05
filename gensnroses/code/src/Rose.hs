@@ -42,134 +42,134 @@ nextInteger lo hi (Seed s) =
   second Seed $ Random.randomR (lo, hi) s
 
 ------------------------------------------------------------------------
--- GenT
+-- Gen
 
-newtype GenT m a =
-  GenT (Seed -> m a)
+newtype Gen m a =
+  Gen (Seed -> m a)
 
-runGenT :: Seed -> GenT m a -> m a
-runGenT seed (GenT m) =
+runGen :: Seed -> Gen m a -> m a
+runGen seed (Gen m) =
   m seed
 
-mapGenT :: (m a -> n b) -> GenT m a -> GenT n b
-mapGenT f (GenT m) =
-  GenT $ \s ->
+mapGen :: (m a -> n b) -> Gen m a -> Gen n b
+mapGen f (Gen m) =
+  Gen $ \s ->
     f (m s)
 
-sampleGenT :: MonadIO m => GenT m a -> m a
-sampleGenT gen = do
+sampleGen :: MonadIO m => Gen m a -> m a
+sampleGen gen = do
   seed <- liftIO newSeed
-  runGenT seed gen
+  runGen seed gen
 
-instance Monad m => Monad (GenT m) where
+instance Monad m => Monad (Gen m) where
   return =
-    GenT . const . return
+    Gen . const . return
 
   (>>=) m k =
-    GenT $ \s ->
+    Gen $ \s ->
       case splitSeed s of
         (sk, sm) ->
-          runGenT sk . k =<<
-          runGenT sm m
+          runGen sk . k =<<
+          runGen sm m
 
-instance MonadTrans GenT where
+instance MonadTrans Gen where
   lift =
-    GenT . const
+    Gen . const
 
-instance MFunctor GenT where
+instance MFunctor Gen where
   hoist =
-    mapGenT
+    mapGen
 
-instance MonadIO m => MonadIO (GenT m) where
+instance MonadIO m => MonadIO (Gen m) where
   liftIO =
     lift . liftIO
 
-instance Monad m => Functor (GenT m) where
+instance Monad m => Functor (Gen m) where
   fmap =
     liftM
 
-instance Monad m => Applicative (GenT m) where
+instance Monad m => Applicative (Gen m) where
   pure =
     return
   (<*>) =
     ap
 
 ------------------------------------------------------------------------
--- TreeT
+-- Tree
 
 data Node m a =
-  Node a [TreeT m a]
+  Node a [Tree m a]
 
-newtype TreeT m a =
-  TreeT (m (Node m a))
+newtype Tree m a =
+  Tree (m (Node m a))
 
-runTreeT :: TreeT m a -> m (Node m a)
-runTreeT (TreeT m) =
+runTree :: Tree m a -> m (Node m a)
+runTree (Tree m) =
   m
 
 instance Monad m => Functor (Node m) where
   fmap f (Node x xs) =
     Node (f x) (fmap (fmap f) xs)
 
-instance Monad m => Monad (TreeT m) where
+instance Monad m => Monad (Tree m) where
   return x =
-    TreeT $
+    Tree $
       return (Node x [])
 
   (>>=) m k =
-    TreeT $ do
-      Node x xs <- runTreeT m
-      Node y ys <- runTreeT (k x)
+    Tree $ do
+      Node x xs <- runTree m
+      Node y ys <- runTree (k x)
       return . Node y $
         fmap (>>= k) xs ++ ys
 
-instance MonadTrans TreeT where
+instance MonadTrans Tree where
   lift m =
-    TreeT $ do
+    Tree $ do
       x <- m
       return (Node x [])
 
-instance MFunctor TreeT where
-  hoist f (TreeT m) =
+instance MFunctor Tree where
+  hoist f (Tree m) =
     let
       hoistNode (Node x xs) =
         Node x (fmap (hoist f) xs)
     in
-      TreeT . f $ fmap hoistNode m
+      Tree . f $ fmap hoistNode m
 
-instance MonadIO m => MonadIO (TreeT m) where
+instance MonadIO m => MonadIO (Tree m) where
   liftIO =
     lift . liftIO
 
-instance Monad m => Functor (TreeT m) where
+instance Monad m => Functor (Tree m) where
   fmap =
     liftM
 
-instance Monad m => Applicative (TreeT m) where
+instance Monad m => Applicative (Tree m) where
   pure =
     return
   (<*>) =
     ap
 
-unfoldTree :: Monad m => (b -> a) -> (b -> [b]) -> b -> TreeT m a
+unfoldTree :: Monad m => (b -> a) -> (b -> [b]) -> b -> Tree m a
 unfoldTree f g x =
-  TreeT . return $
+  Tree . return $
     Node (f x) (unfoldForest f g x)
 
-unfoldForest :: Monad m => (b -> a) -> (b -> [b]) -> b -> [TreeT m a]
+unfoldForest :: Monad m => (b -> a) -> (b -> [b]) -> b -> [Tree m a]
 unfoldForest f g =
   fmap (unfoldTree f g) . g
 
-expandTree :: Monad m => (a -> [a]) -> TreeT m a -> TreeT m a
+expandTree :: Monad m => (a -> [a]) -> Tree m a -> Tree m a
 expandTree f m =
-  TreeT $ do
-    Node x xs <- runTreeT m
+  Tree $ do
+    Node x xs <- runTree m
     return . Node x $
       fmap (expandTree f) xs ++ unfoldForest id f x
 
-pruneTree :: Monad m => TreeT m a -> TreeT m a
-pruneTree (TreeT m) =
-  TreeT $ do
+pruneTree :: Monad m => Tree m a -> Tree m a
+pruneTree (Tree m) =
+  Tree $ do
     Node x _ <- m
     return $ Node x []
 
@@ -210,38 +210,38 @@ halves =
 ------------------------------------------------------------------------
 -- Combinators - Shrinking
 
-shrink :: Monad m => (a -> [a]) -> GenT (TreeT m) a -> GenT (TreeT m) a
+shrink :: Monad m => (a -> [a]) -> Gen (Tree m) a -> Gen (Tree m) a
 shrink =
-  mapGenT . expandTree
+  mapGen . expandTree
 
-noShrink :: Monad m => GenT (TreeT m) a -> GenT (TreeT m) a
+noShrink :: Monad m => Gen (Tree m) a -> Gen (Tree m) a
 noShrink =
-  mapGenT pruneTree
+  mapGen pruneTree
 
 ------------------------------------------------------------------------
 -- Combinators - Ranges
 
-integral_ :: (Monad m, Integral a) => a -> a -> GenT m a
+integral_ :: (Monad m, Integral a) => a -> a -> Gen m a
 integral_ lo hi =
-  GenT $
+  Gen $
     return . fromInteger . fst .
       nextInteger (toInteger lo) (toInteger hi)
 
-integral :: (Monad m, Integral a) => a -> a -> GenT (TreeT m) a
+integral :: (Monad m, Integral a) => a -> a -> Gen (Tree m) a
 integral lo hi =
   shrink (towards lo) $ integral_ lo hi
 
-enum :: (Monad m, Enum a) => a -> a -> GenT (TreeT m) a
+enum :: (Monad m, Enum a) => a -> a -> Gen (Tree m) a
 enum lo hi =
   fmap toEnum $ integral (fromEnum lo) (fromEnum hi)
 
-element :: Monad m => [a] -> GenT (TreeT m) a
+element :: Monad m => [a] -> Gen (Tree m) a
 element [] = error "Rose.element: used with empty list"
 element xs = do
   n <- integral 0 (length xs - 1)
   return $ xs !! n
 
-choice :: Monad m => [GenT (TreeT m) a] -> GenT (TreeT m) a
+choice :: Monad m => [Gen (Tree m) a] -> Gen (Tree m) a
 choice [] = error "Rose.choice: used with empty list"
 choice xs = do
   n <- integral 0 (length xs - 1)
@@ -254,7 +254,7 @@ instance (Show1 m, Show a) => Show (Node m a) where
   showsPrec =
     showsPrec1
 
-instance (Show1 m, Show a) => Show (TreeT m a) where
+instance (Show1 m, Show a) => Show (Tree m a) where
   showsPrec =
     showsPrec1
 
@@ -272,8 +272,8 @@ instance Show1 m => Show1 (Node m) where
     in
       showsBinaryWith sp sp2 "Node" d x xs
 
-instance Show1 m => Show1 (TreeT m) where
-  liftShowsPrec sp sl d (TreeT m) =
+instance Show1 m => Show1 (Tree m) where
+  liftShowsPrec sp sl d (Tree m) =
     let
       sp1 =
         liftShowsPrec sp sl
@@ -284,14 +284,14 @@ instance Show1 m => Show1 (TreeT m) where
       sp2 =
         liftShowsPrec sp1 sl1
     in
-      showsUnaryWith sp2 "TreeT" d m
+      showsUnaryWith sp2 "Tree" d m
 
 --
 -- Rendering implementation based on the one from containers/Data.Tree
 --
 
-renderTreeLines :: Monad m => TreeT m String -> m [String]
-renderTreeLines (TreeT m) = do
+renderTreeLines :: Monad m => Tree m String -> m [String]
+renderTreeLines (Tree m) = do
   Node x xs0 <- m
   xs <- renderForestLines xs0
   return $
@@ -305,7 +305,7 @@ renderNode xs =
     _ ->
       xs
 
-renderForestLines :: Monad m => [TreeT m String] -> m [String]
+renderForestLines :: Monad m => [Tree m String] -> m [String]
 renderForestLines xs0 =
   let
     shift first other =
@@ -326,30 +326,30 @@ renderForestLines xs0 =
         return $
           shift " ├╼" " │ " s ++ ss
 
-renderTree :: Monad m => TreeT m String -> m String
+renderTree :: Monad m => Tree m String -> m String
 renderTree =
   fmap unlines . renderTreeLines
 
 ------------------------------------------------------------------------
 -- Sampling
 
-printSample :: Show a => GenT (TreeT IO) a -> IO ()
+printSample :: Show a => Gen (Tree IO) a -> IO ()
 printSample gen = do
-  Node x ts <- runTreeT $ sampleGenT gen
+  Node x ts <- runTree $ sampleGen gen
   putStrLn "=== Outcome ==="
   putStrLn $ show x
   putStrLn "=== Shrinks ==="
   forM_ ts $ \t -> do
-    Node y _ <- runTreeT t
+    Node y _ <- runTree t
     putStrLn $ show y
 
-printSampleTree :: Show a => GenT (TreeT IO) a -> IO ()
+printSampleTree :: Show a => Gen (Tree IO) a -> IO ()
 printSampleTree =
-  (putStr =<<) . renderTree . fmap show . sampleGenT
+  (putStr =<<) . renderTree . fmap show . sampleGen
 
-printSampleTree' :: Show a => Int -> GenT (TreeT IO) a -> IO ()
+printSampleTree' :: Show a => Int -> Gen (Tree IO) a -> IO ()
 printSampleTree' seed =
-  (putStr =<<) . renderTree . fmap show . runGenT (Seed $ Random.mkStdGen seed)
+  (putStr =<<) . renderTree . fmap show . runGen (Seed $ Random.mkStdGen seed)
 
 ------------------------------------------------------------------------
 -- Property
@@ -381,14 +381,14 @@ type Property =
 
 newtype PropertyT m a =
   PropertyT {
-      unPropertyT :: GenT (ExceptT Break (WriterT [String] (TreeT m))) a
+      unPropertyT :: Gen (ExceptT Break (WriterT [String] (Tree m))) a
     } deriving (Functor, Applicative, Monad)
 
-runPropertyT :: PropertyT m a -> GenT m (Node m (Either Break a, [String]))
+runPropertyT :: PropertyT m a -> Gen m (Node m (Either Break a, [String]))
 runPropertyT (PropertyT p) =
-  mapGenT (runTreeT . runWriterT . runExceptT) p
+  mapGen (runTree . runWriterT . runExceptT) p
 
-forAll :: (Monad m, Show a) => GenT (TreeT m) a -> PropertyT m a
+forAll :: (Monad m, Show a) => Gen (Tree m) a -> PropertyT m a
 forAll gen = do
   x <- PropertyT $ hoist (lift . lift) gen
   counterexample (show x)
@@ -445,7 +445,7 @@ takeSmallest :: Monad m => Shrinks -> Node m (Either Break (), [String]) -> m St
 takeSmallest (Shrinks n) (Node (x, w) xs) =
   case x of
     Left Failure ->
-      findM xs (Failed (Shrinks n) w) $ \(TreeT m) -> do
+      findM xs (Failed (Shrinks n) w) $ \(Tree m) -> do
         node <- m
         if isFailure node then
           Just <$> takeSmallest (Shrinks $ n + 1) node
@@ -458,10 +458,10 @@ takeSmallest (Shrinks n) (Node (x, w) xs) =
     Right () ->
       return OK
 
-report :: forall m. Monad m => Int -> PropertyT m () -> GenT m Report
+report :: forall m. Monad m => Int -> PropertyT m () -> Gen m Report
 report n p =
   let
-    loop :: Int -> Int -> GenT m Report
+    loop :: Int -> Int -> Gen m Report
     loop !tests !discards =
       if tests == n then
         pure $ Report tests discards OK
@@ -484,7 +484,7 @@ report n p =
 check :: MonadIO m => PropertyT m () -> m Report
 check p = do
   seed <- liftIO newSeed
-  runGenT seed $
+  runGen seed $
     report 100 p
 
 -- Try 'check prop_foo' to see what happens
