@@ -17,6 +17,5 @@ library
   exposed-modules:   Rose
 
   build-depends:     base
-                   , mmorph
                    , random
                    , transformers

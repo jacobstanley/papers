@@ -588,6 +588,18 @@ order :: Gen Item -> Gen Order
 order gen =
   Order <$> list 0 50 gen
 
+-- | Fails with:
+--
+-- @
+-- λ check $ prop_total
+-- *** Failed! Falsifiable (after 1 test and 113 shrinks):
+-- Order []
+-- Order [Item (Name "oculus") (USD 1000)]
+-- === Not Equal ===
+-- USD 1001
+-- USD 1000
+-- @
+--
 prop_total :: Property ()
 prop_total = do
   x <- forAll (order cheap)
