@@ -121,7 +121,7 @@ sampleGen gen = do
 
 instance Monad Gen where
   return =
-    Gen . const . return . return
+    Gen . const . pure . pure
 
   (>>=) m k =
     Gen $ \s ->
@@ -249,7 +249,7 @@ element :: [a] -> Gen a
 element [] = error "Rose.element: used with empty list"
 element xs = do
   n <- integral 0 (length xs - 1)
-  return $ xs !! n
+  pure $ xs !! n
 
 choice :: [Gen a] -> Gen a
 choice [] = error "Rose.choice: used with empty list"
