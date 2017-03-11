@@ -100,6 +100,10 @@ mapMaybeTree f (Node x xs) = do
   pure . Node y $
     mapMaybe (mapMaybeTree f) xs
 
+bindMaybeTree :: (a -> Maybe (Tree b)) -> Maybe (Tree a) -> Maybe (Tree b)
+bindMaybeTree k m =
+  fmap join . mapMaybeTree k =<< m
+
 ------------------------------------------------------------------------
 -- Gen
 
@@ -126,9 +130,9 @@ instance Monad Gen where
   (>>=) m k =
     Gen $ \s ->
       case splitSeed s of
-        (sk, sm) -> do
-          fmap join $
-            mapMaybeTree (runGen sk . k) =<< runGen sm m
+        (sk, sm) ->
+          (runGen sk . k) `bindMaybeTree`
+          (runGen sm m)
 
 instance MonadPlus Gen where
   mzero =
@@ -280,7 +284,7 @@ just =
 
 list :: Int -> Int -> Gen a -> Gen [a]
 list lo hi gen =
-  filter ((>= lo) . length) .
+  mfilter ((>= lo) . length) .
   shrink shrinkList $ do
     k <- integral_ lo hi
     replicateM k gen
