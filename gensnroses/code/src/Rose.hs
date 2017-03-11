@@ -471,11 +471,11 @@ checkN n prop =
               Nothing ->
                 loop tests (discards + 1) s1
 
-              Just t ->
-                if isFailure t then
-                  Report (tests + 1) discards $ takeSmallest (Shrinks 0) t
-                else
-                  loop (tests + 1) discards s1
+              Just t | isFailure t ->
+                Report (tests + 1) discards $ takeSmallest (Shrinks 0) t
+
+              Just _ ->
+                loop (tests + 1) discards s1
   in
     loop 0 0 <$> newSeed
 
