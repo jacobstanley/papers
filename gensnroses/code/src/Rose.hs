@@ -591,7 +591,7 @@ order gen =
 -- | Fails with:
 --
 -- @
--- λ check $ prop_total
+-- λ check prop_total
 -- *** Failed! Falsifiable (after 1 test and 113 shrinks):
 -- Order []
 -- Order [Item (Name "oculus") (USD 1000)]
