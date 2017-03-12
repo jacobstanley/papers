@@ -7,7 +7,7 @@
 module Rose where
 
 import           Control.Applicative (Alternative(..))
-import           Control.Monad (MonadPlus(..), liftM, ap, mfilter, join, replicateM)
+import           Control.Monad (MonadPlus(..), liftM, ap, mfilter, join)
 import           Control.Monad.Trans.Class (MonadTrans(..))
 import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import           Control.Monad.Trans.Writer.Lazy (WriterT(..), tell)
@@ -284,10 +284,11 @@ just =
 
 list :: Int -> Int -> Gen a -> Gen [a]
 list lo hi gen =
+  (sequence =<<) .
   mfilter ((>= lo) . length) .
   shrink shrinkList $ do
     k <- integral_ lo hi
-    replicateM k gen
+    pure $ replicate k gen
 
 ----------------------------------------------------------------------
 -- Tree - Rendering
