@@ -4,6 +4,3 @@
 Flesh out the details of the new implementation. All the extras. Generators that control how the shrinks work, eg when generating integers as the sample index increases the range of possible values also increases, but always shrinks down to some "nice value".
 
 Generator combinators. Randomly pick one of the generators in a list. Or have some corpus of strings, like customer names or product names. Use those examples first then generate random strings. Include diagrams of how the range changes as the size parameter increases.
-
-Use of monad transformers. Don't discuss monad transformers at the start, but would be good as a seprate section. In existing quickcheck if generate some values, do an effect, then generate more examples the examples after the effect will not shrink properly.
-

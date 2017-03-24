@@ -1,0 +1,7 @@
+%!TEX root = ../Main.tex
+\section{Transformers}
+
+Use of monad transformers. Don't discuss monad transformers at the start, but would be good as a seprate section. In existing quickcheck if generate some values, do an effect, then generate more examples the examples after the effect will not shrink properly.
+
+One of the motivations for the monad transformer is that PureScript uses an Aff monad to handle callbacks for JavaScript events. Want to quickcheck against libraries written in JavaScript. Can say that in PureScript this style of callback programming is commonplace, but for the paper we can just write the examples in Haskell.
+
