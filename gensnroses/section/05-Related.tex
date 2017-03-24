@@ -5,3 +5,10 @@
 Sentence about QuickCheck\cite{claessen:quickcheck}. 
 
 Cite all the related work that we have found and \emph{give a comparison} as to how that work is different to our own. If ours is better then say how.
+
+We suspect that some other systems are implemented in this way, but it's not written up properly. Suspect that the commercial Erlang version of QuickCheck works in this way. 
+
+There is also a Closure library that uses a rose tree, but it's not written up. Suspect that the bind implementation is wrong. Bind re-splits the tree for every shrink. Don't want to re-generate new random values when we shrink, just less of the old values. Example, when shrinking a 10 elem list the result might have 5 elems of the prev list, but not 5 entirely new elements. 
+
+Python library has integrated shrinking but is not implemented with a rose tree.
+
