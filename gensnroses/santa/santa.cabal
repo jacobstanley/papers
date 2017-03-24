@@ -1,0 +1,59 @@
+name:                  santa
+version:               0.0.1
+license:               AllRightsReserved
+author:                Charles O'Farrell <charleso@gmail.com>
+maintainer:            Charles O'Farrell <charleso@gmail.com>
+copyright:             (c) 2017 Charles O'Farrell.
+synopsis:              None
+category:              Prelude
+cabal-version:         >= 1.8
+build-type:            Simple
+description:           Scans hackage for Arbitrary instances
+
+library
+  ghc-options:
+                    -Wall -O2
+
+  hs-source-dirs:
+                    src
+
+  build-depends:
+                      base                            >= 3          && < 5
+                    , aeson                           == 0.8.*
+                    , bytestring                      == 0.10.*
+                    , directory                       == 1.2.*
+                    , containers                      == 0.5.*
+                    , filepath                        == 1.4.*
+                    , http-client                     == 0.5.*
+                    , http-types                      == 0.9.*
+                    , tar                             == 0.5.*
+                    , transformers                    >= 0.3        && < 5
+                    , zlib                            == 0.6.*
+
+  exposed-modules:
+                      Santa.Extract
+                      Santa.Github
+                      Santa.Hackage
+                      Santa.Http
+                      Santa.Prelude
+
+executable santa
+  ghc-options:
+                    -Wall -threaded -O2
+                    -rtsopts -with-rtsopts "-T -N"
+
+  main-is:
+                    santa.hs
+
+  hs-source-dirs:
+                    main
+
+  build-depends:
+                      base                            >= 3          && < 5
+                    , santa
+                    , bytestring
+                    , directory
+                    , filepath
+                    , HsOpenSSL                       == 0.11.*
+                    , http-client
+                    , http-client-openssl             == 0.2.*
