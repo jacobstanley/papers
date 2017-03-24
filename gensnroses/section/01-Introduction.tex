@@ -1,7 +1,7 @@
 %!TEX root = ../Main.tex
 \section{Introdution}
 
-Quickcheck\cite{claessen:quickcheck} is awesome. Give a short into to quickcheck. A key part of the quick check library design is that counterexamples can be shrunk into smaller ones. The Aribrary type class defines two separate methods, one for generating counter examples and one for shrinking them. However, in practice programmers do not provide shrink functions in their arbitrary instances \TODO{back this up with data from Hackage}. 
+Quickcheck\cite{claessen:quickcheck} is awesome. Give a short into to quickcheck. A key part of the quick check library design is that counterexamples can be shrunk into smaller ones. The Aribrary type class defines two separate methods, one for generating counter examples and one for shrinking them. However, in practice programmers do not provide shrink functions in their arbitrary instances. In practice less than 20 percent of instances on hackage have shrink instances. 
 
 \begin{code}
   class Arbitrary a where
@@ -9,17 +9,14 @@ Quickcheck\cite{claessen:quickcheck} is awesome. Give a short into to quickcheck
    shrink    :: a -> [a]
 \end{code}
 
-
-
-
-\emph{Semantic Shrinking}. Shrinks should be based on the original generator, not just on the structural type. We often want to shrink to a "nice" value rather than the structurally smallest one. For example, dates can be shrunk to a value like 2001-01-01 rather than 0001-01-01. In practice we can handle this using newtype wrappers, but writing code to wrap and unwrap values is tedious. For example, consider a map from @Foo@ to @Bar@ \TODO{better example}. 
+\emph{Semantic Shrinking}. Shrinks should be based on the original generator, not just on the structural type. We often want to shrink to a "nice" value rather than the structurally smallest one. For example, dates can be shrunk to a value like 2001-01-01 rather than 0001-01-01. In practice we can handle this using newtype wrappers, but writing code to wrap and unwrap values is tedious. For example, consider a map from @Foo@ to @Bar@ \TODO{better example}. Some shrink don't preserve the semantic meaning of the values they are shrinking.
 
 \emph{Splitting} of the random number generator. Shrinking the number of elements in collection structure should effect now new sub-terms are generated. \TODO{need an example}.
 
 
 We make the following contributions:
 \begin{itemize}
-\item Our system automatically provides shinks when constructing arbitrary instances.
+\item Our system automatically provides shrinks when constructing arbitrary instances.
 
 \item Our system makes it easy to provide shrink functions that take into account the semantic meaning of the data, rather than just its structural type.
 

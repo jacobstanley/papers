@@ -1,6 +1,8 @@
 %!TEX root = ../Main.tex
 \section{Everything is Roses}
 
+Introduce the main ideas here, but leave \emph{added extras} for the next section. The rose tree data structure, examples are at the first level of the tree, shrinks are lower levels.
+
 Here is our new definition of the @Arbitrary@ class.
 
 \begin{code}
@@ -10,4 +12,8 @@ class Arbitrary a where
 
 Our generator now produces a candidate value and a lazy tree of all its possible reductions, rather than just a single candidate at a time. Give the data type definition for @Tree@. Give some examples of trees.
 
+Talk about a key example, describe how it works and introduce parts of our new system along the way.
 
+Need a key example which has a bug, but not an "obvious bug". At the same time it shouldn't take too long to explain.
+
+Or: the key example could focus on generating data that obeys some schema, and then the shrunk examples still need to match the schema.
