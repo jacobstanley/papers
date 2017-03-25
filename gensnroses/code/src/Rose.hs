@@ -635,12 +635,12 @@ data Aggregate =
 
 data Schema =
     SInt Aggregate
-  | STuple Schema Schema
+  | SPair Schema Schema
     deriving (Eq, Ord, Show)
 
 data Value =
     VInt Int
-  | VTuple Value Value
+  | VPair Value Value
     deriving (Eq, Ord, Show)
 
 checkValue :: Schema -> Value -> Bool
@@ -651,8 +651,8 @@ checkValue schema x0 =
       ->
         True
 
-    STuple ls rs
-      | VTuple lx rx <- x0
+    SPair ls rs
+      | VPair lx rx <- x0
       ->
         checkValue ls lx &&
         checkValue rs rx
@@ -679,11 +679,11 @@ mergeValue schema x0 y0 =
       ->
         VInt (mergeInt aggregate x y)
 
-    STuple ls rs
-      | VTuple lx rx <- x0
-      , VTuple ly ry <- y0
+    SPair ls rs
+      | VPair lx rx <- x0
+      , VPair ly ry <- y0
       ->
-        VTuple (mergeValue rs rx ry) (mergeValue ls lx ly)
+        VPair (mergeValue rs rx ry) (mergeValue ls lx ly)
 
     _ ->
       error $ "Schema mismatch " ++ show (schema, x0, y0)
@@ -701,7 +701,7 @@ genSchema gen =
       else
         oneof [
             SInt <$> gen
-          , liftS2 STuple
+          , liftS2 SPair
               (loop (n `div` 2))
               (loop (n `div` 2))
           ]
@@ -712,8 +712,8 @@ genValue :: Schema -> Gen Value
 genValue = \case
   SInt _ ->
     VInt <$> integral 0 100
-  STuple sx sy ->
-    VTuple <$> genValue sx <*> genValue sy
+  SPair sx sy ->
+    VPair <$> genValue sx <*> genValue sy
 
 prop_merge_value :: Property ()
 prop_merge_value = do

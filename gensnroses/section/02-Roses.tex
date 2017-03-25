@@ -1,19 +1,94 @@
 %!TEX root = ../Main.tex
 \section{Everything is Roses}
 
-Introduce the main ideas here, but leave \emph{added extras} for the next section. The rose tree data structure, examples are at the first level of the tree, shrinks are lower levels.
-
-Here is our new definition of the @Arbitrary@ class.
+Give some examples of trees.
 
 \begin{code}
-class Arbitrary a where
-   arbitrary :: Gen (Tree a)
+  data Rose a =
+    Node a [Rose a]
 \end{code}
 
-Our generator now produces a candidate value and a lazy tree of all its possible reductions, rather than just a single candidate at a time. Give the data type definition for @Tree@. Give some examples of trees.
+QuickCheck implements shrinking for properties using a rose tree. A property is just a generator which produces a tree of results. The root of the tree is the result of the randomly generated test case, while the shrinks are the sub-trees.
 
-Talk about a key example, describe how it works and introduce parts of our new system along the way.
+\begin{code}
+  data Result =
+    Result {
+        success         :: Bool
+      , counterexamples :: [String]
+      }
 
-Need a key example which has a bug, but not an "obvious bug". At the same time it shouldn't take too long to explain.
+  newtype Property =
+    Property (Gen (Rose Result))
+\end{code}
 
-Or: the key example could focus on generating data that obeys some schema, and then the shrunk examples still need to match the schema.
+A lazy tree is an ideal way to search the space of simplified test cases, but only exposing its construction to the programmer via a type class bound @shrink@ function has a number of problems.
+
+While generators can be combined using the familiar @Functor@ / @Applicative@ / @Monad@ interface, @Arbitrary@ instances cannot. One might think that changing @Arbitrary@ to a data type might solve this problem, but unfortunately the @shrink@ function is invariant, and thus @Arbitrary@ can never be a covariant @Functor@.
+
+\begin{code}
+  data Arbitrary a =
+    Arbitrary {
+        arbitrary :: Gen a
+      , shrink    :: a -> [a] -- invariant
+      }
+\end{code}
+
+We propose that generators themselves should produce trees of values. Not only does this allow generators to implement much more involved shrinking strategies, the covariant nature of rose trees allows us to keep the convenient @Functor@ / @Applicative@ / @Monad@ interface which we know and love.
+
+(Flesh this out a bit more)
+
+\begin{code}
+  data Gen a =
+    Gen (StdGen -> Rose a)
+\end{code}
+
+Imagine a general system for storing well-typed data, with built-in aggregation capabilities. Such a system might be used in the context of feature engineering, for a machine learning platform, such as the one we have developed at Ambiata.
+
+In order to test the functions involved in implementing this system, one would need to generate sets of values which have compatible schemas. This is incredibly difficult using a type directed approach to generation and shrinking.
+
+(Not sure if the aggregation part is more than necessary at this point. The fact that the values are aggregates means they are semigroups, so we can talk about merging/appending them together. It also gives us something which is in the schema, but not available in the value, so we can't derive the schema from the value.)
+
+\begin{code}
+  data Aggregate =
+      Minimum
+    | Maximum
+    | Sum
+
+  data Schema =
+      SInt Aggregate
+    | SPair Schema Schema
+
+  data Value =
+      VInt Int
+    | VPair Value Value
+\end{code}
+
+If we wanted to test a function which requires two values with matching schemas, the obvious thing to do is to generate a schema, then use that to generate two values which comply with the schema. However, implementing this as an @Arbitrary@ instance is anything but obvious.
+
+\begin{code}
+  data TwoValue =
+    TwoValue Schema Value Value
+
+  genSchema :: Gen Schema
+  genSchema =
+    oneof [
+        SInt <$> elements [Minimum, Maximum, Sum]
+      , SPair <$> genSchema <*> genSchema
+      ]
+
+  genValue :: Schema -> Gen Value
+  genValue = \case
+    SInt _ ->
+      VInt <$> arbitrary
+    SPair sx sy ->
+      VPair <$> genValue sx <*> genValue sy
+
+  instance Arbitrary TwoValue where
+    arbitrary = do
+      schema <- genSchema
+      TwoValue schema
+        <$> genValue schema
+        <*> genValue schema
+    shrink =
+      -- ???
+\end{code}
