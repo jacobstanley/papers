@@ -1,9 +1,12 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Rose where
 
 import           Control.Applicative (Alternative(..))
@@ -13,7 +16,7 @@ import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import           Control.Monad.Trans.Writer.Lazy (WriterT(..), tell)
 
 import           Data.Bifunctor (bimap, second)
-import           Data.Foldable (for_)
+import           Data.Foldable (for_, toList)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe, fromJust, isJust)
 
@@ -22,6 +25,7 @@ import           Prelude hiding (filter)
 import qualified System.Random as Random
 
 import           Text.Printf (printf)
+
 
 ------------------------------------------------------------------------
 -- Seed
@@ -126,9 +130,19 @@ sampleGen gen = do
   seed <- newSeed
   pure (runGen seed gen)
 
+liftTree :: Maybe (Tree a) -> Gen a
+liftTree x =
+  Gen (\_ -> x)
+
+freeze :: Gen a -> Gen (a, Gen a)
+freeze gen =
+  Gen $ \seed -> do
+    Node x xs <- runGen seed gen
+    Just $ Node (x, liftTree $ Just (Node x xs)) []
+
 instance Monad Gen where
   return =
-    Gen . const . pure . pure
+    liftTree . pure . pure
 
   (>>=) m k =
     Gen $ \s ->
@@ -139,7 +153,7 @@ instance Monad Gen where
 
 instance MonadPlus Gen where
   mzero =
-    Gen $ const Nothing
+    liftTree Nothing
 
   mplus x y =
     Gen $ \s ->
@@ -232,13 +246,6 @@ prune :: Gen a -> Gen a
 prune =
   mapGen (fmap pruneTree)
 
-liftG2 :: (a -> a -> a) -> Gen a -> Gen a -> Gen a
-liftG2 f gx gy = do
-  x <- gx
-  y <- gy
-  Gen $ \_ ->
-    Just (Node (f x y) [Node x [], Node y []])
-
 ------------------------------------------------------------------------
 -- Combinators - Range
 
@@ -298,10 +305,73 @@ justOf gen =
 
 listOf :: Int -> Int -> Gen a -> Gen [a]
 listOf lo hi gen =
+  (sequence =<<) .
   mfilter ((>= lo) . length) .
   shrink shrinkList $ do
     k <- integral_ lo hi
-    replicateM k gen
+    replicateM k (fmap snd $ freeze gen)
+
+------------------------------------------------------------------------
+-- Combinators - Subterms
+
+data Subterms n a =
+    One a
+  | All (Vec n a)
+    deriving (Functor, Foldable, Traversable)
+
+data Nat =
+    Z
+  | S Nat
+
+data Vec n a where
+  Nil :: Vec 'Z a
+  (:.) :: a -> Vec n a -> Vec ('S n) a
+
+infixr 5 :.
+
+deriving instance Functor (Vec n)
+deriving instance Foldable (Vec n)
+deriving instance Traversable (Vec n)
+
+shrinkSubterms :: Subterms n a -> [Subterms n a]
+shrinkSubterms = \case
+  One _ ->
+    []
+  All xs ->
+    fmap One $ toList xs
+
+subterms :: Vec n (Gen a) -> Gen (Subterms n a)
+subterms =
+  (sequence =<<) .
+  shrink shrinkSubterms .
+  fmap All .
+  mapM (fmap snd . freeze)
+
+fromSubterms :: Applicative m => (Vec n a -> m a) -> Subterms n a -> m a
+fromSubterms f = \case
+  One x ->
+    pure x
+  All xs ->
+    f xs
+
+withSubterms :: Vec n (Gen a) -> (Vec n a -> Gen a) -> Gen a
+withSubterms gs f =
+  fromSubterms f =<< subterms gs
+
+liftS :: (a -> a) -> Gen a -> Gen a
+liftS f gx =
+  withSubterms (gx :. Nil) $ \(x :. Nil) ->
+    pure (f x)
+
+liftS2 :: (a -> a -> a) -> Gen a -> Gen a -> Gen a
+liftS2 f gx gy =
+  withSubterms (gx :. gy :. Nil) $ \(x :. y :. Nil) ->
+    pure (f x y)
+
+liftS3 :: (a -> a -> a -> a) -> Gen a -> Gen a -> Gen a -> Gen a
+liftS3 f gx gy gz =
+  withSubterms (gx :. gy :. gz :. Nil) $ \(x :. y :. z :. Nil) ->
+    pure (f x y z)
 
 ----------------------------------------------------------------------
 -- Tree - Rendering
@@ -631,7 +701,7 @@ genSchema gen =
       else
         oneof [
             SInt <$> gen
-          , liftG2 STuple
+          , liftS2 STuple
               (loop (n `div` 2))
               (loop (n `div` 2))
           ]
