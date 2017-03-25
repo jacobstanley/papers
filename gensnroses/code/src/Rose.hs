@@ -1,9 +1,12 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Rose where
 
 import           Control.Applicative (Alternative(..))
@@ -13,12 +16,16 @@ import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import           Control.Monad.Trans.Writer.Lazy (WriterT(..), tell)
 
 import           Data.Bifunctor (bimap, second)
-import           Data.Foldable (for_)
+import           Data.Foldable (for_, toList)
+import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe, fromJust, isJust)
 
 import           Prelude hiding (filter)
 
 import qualified System.Random as Random
+
+import           Text.Printf (printf)
+
 
 ------------------------------------------------------------------------
 -- Seed
@@ -123,9 +130,19 @@ sampleGen gen = do
   seed <- newSeed
   pure (runGen seed gen)
 
+liftTree :: Maybe (Tree a) -> Gen a
+liftTree x =
+  Gen (\_ -> x)
+
+freeze :: Gen a -> Gen (a, Gen a)
+freeze gen =
+  Gen $ \seed -> do
+    Node x xs <- runGen seed gen
+    Just $ Node (x, liftTree $ Just (Node x xs)) []
+
 instance Monad Gen where
   return =
-    Gen . const . pure . pure
+    liftTree . pure . pure
 
   (>>=) m k =
     Gen $ \s ->
@@ -136,7 +153,7 @@ instance Monad Gen where
 
 instance MonadPlus Gen where
   mzero =
-    Gen $ const Nothing
+    liftTree Nothing
 
   mplus x y =
     Gen $ \s ->
@@ -242,6 +259,10 @@ integral :: Integral a => a -> a -> Gen a
 integral lo hi =
   shrink (towards lo) $ integral_ lo hi
 
+int :: Int -> Int -> Gen Int
+int =
+  integral
+
 enum :: Enum a => a -> a -> Gen a
 enum lo hi =
   fmap toEnum $ integral (fromEnum lo) (fromEnum hi)
@@ -249,23 +270,23 @@ enum lo hi =
 ------------------------------------------------------------------------
 -- Combinators - Choice
 
-element :: [a] -> Gen a
-element [] = error "Rose.element: used with empty list"
-element xs = do
+elements :: [a] -> Gen a
+elements [] = error "Rose.elements: used with empty list"
+elements xs = do
   n <- integral 0 (length xs - 1)
   pure $ xs !! n
 
-choice :: [Gen a] -> Gen a
-choice [] = error "Rose.choice: used with empty list"
-choice xs = do
+oneof :: [Gen a] -> Gen a
+oneof [] = error "Rose.oneof: used with empty list"
+oneof xs = do
   n <- integral 0 (length xs - 1)
   xs !! n
 
 ----------------------------------------------------------------------
 -- Combinators - Conditional
 
-filter :: (a -> Bool) -> Gen a -> Gen a
-filter p gen =
+suchThat :: Gen a -> (a -> Bool) -> Gen a
+suchThat gen p =
   let
     loop = \case
       0 ->
@@ -275,19 +296,82 @@ filter p gen =
   in
     loop (100 :: Int)
 
-just :: Gen (Maybe a) -> Gen a
-just =
-  fmap fromJust . filter isJust
+justOf :: Gen (Maybe a) -> Gen a
+justOf gen =
+  fmap fromJust (gen `suchThat` isJust)
 
 ----------------------------------------------------------------------
 -- Combinators - Collections
 
-list :: Int -> Int -> Gen a -> Gen [a]
-list lo hi gen =
+listOf :: Int -> Int -> Gen a -> Gen [a]
+listOf lo hi gen =
+  (sequence =<<) .
   mfilter ((>= lo) . length) .
   shrink shrinkList $ do
     k <- integral_ lo hi
-    replicateM k gen
+    replicateM k (fmap snd $ freeze gen)
+
+------------------------------------------------------------------------
+-- Combinators - Subterms
+
+data Subterms n a =
+    One a
+  | All (Vec n a)
+    deriving (Functor, Foldable, Traversable)
+
+data Nat =
+    Z
+  | S Nat
+
+data Vec n a where
+  Nil :: Vec 'Z a
+  (:.) :: a -> Vec n a -> Vec ('S n) a
+
+infixr 5 :.
+
+deriving instance Functor (Vec n)
+deriving instance Foldable (Vec n)
+deriving instance Traversable (Vec n)
+
+shrinkSubterms :: Subterms n a -> [Subterms n a]
+shrinkSubterms = \case
+  One _ ->
+    []
+  All xs ->
+    fmap One $ toList xs
+
+subterms :: Vec n (Gen a) -> Gen (Subterms n a)
+subterms =
+  (sequence =<<) .
+  shrink shrinkSubterms .
+  fmap All .
+  mapM (fmap snd . freeze)
+
+fromSubterms :: Applicative m => (Vec n a -> m a) -> Subterms n a -> m a
+fromSubterms f = \case
+  One x ->
+    pure x
+  All xs ->
+    f xs
+
+withSubterms :: Vec n (Gen a) -> (Vec n a -> Gen a) -> Gen a
+withSubterms gs f =
+  fromSubterms f =<< subterms gs
+
+liftS :: (a -> a) -> Gen a -> Gen a
+liftS f gx =
+  withSubterms (gx :. Nil) $ \(x :. Nil) ->
+    pure (f x)
+
+liftS2 :: (a -> a -> a) -> Gen a -> Gen a -> Gen a
+liftS2 f gx gy =
+  withSubterms (gx :. gy :. Nil) $ \(x :. y :. Nil) ->
+    pure (f x y)
+
+liftS3 :: (a -> a -> a -> a) -> Gen a -> Gen a -> Gen a -> Gen a
+liftS3 f gx gy gz =
+  withSubterms (gx :. gy :. gz :. Nil) $ \(x :. y :. z :. Nil) ->
+    pure (f x y z)
 
 ----------------------------------------------------------------------
 -- Tree - Rendering
@@ -543,69 +627,171 @@ check prop = do
 ------------------------------------------------------------------------
 -- Example
 
-newtype Name =
-  Name String
-  deriving (Eq, Ord, Show)
+data Aggregate =
+    Minimum
+  | Maximum
+  | Sum
+    deriving (Eq, Ord, Show)
 
-newtype USD =
-  USD Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
+data Schema =
+    SInt Aggregate
+  | STuple Schema Schema
+    deriving (Eq, Ord, Show)
 
-data Item =
-  Item Name USD
-  deriving (Eq, Ord, Show)
+data Value =
+    VInt Int
+  | VTuple Value Value
+    deriving (Eq, Ord, Show)
 
-newtype Order =
-  Order [Item]
-  deriving (Eq, Ord, Show)
+checkValue :: Schema -> Value -> Bool
+checkValue schema x0 =
+  case schema of
+    SInt _
+      | VInt _ <- x0
+      ->
+        True
 
-merge :: Order -> Order -> Order
-merge (Order xs) (Order ys) =
-  Order $ xs ++ ys ++
-    if any ((> 50) . price) xs ||
-       any ((> 50) . price) ys then
-      [Item (Name "processing") (USD 1)]
-    else
-      []
+    STuple ls rs
+      | VTuple lx rx <- x0
+      ->
+        checkValue ls lx &&
+        checkValue rs rx
 
-price :: Item -> USD
-price (Item _ x) =
-  x
+    _ ->
+      False
 
-total :: Order -> USD
-total (Order xs) =
-  sum $ fmap price xs
+mergeInt :: Aggregate -> Int -> Int -> Int
+mergeInt aggregate =
+  case aggregate of
+    Minimum ->
+      min
+    Maximum ->
+      max
+    Sum ->
+      (+)
 
-cheap :: Gen Item
-cheap =
-  Item
-    <$> (Name <$> element ["sandwich", "noodles"])
-    <*> (USD <$> integral 5 10)
+mergeValue :: Schema -> Value -> Value -> Value
+mergeValue schema x0 y0 =
+  case schema of
+    SInt aggregate
+      | VInt x <- x0
+      , VInt y <- y0
+      ->
+        VInt (mergeInt aggregate x y)
 
-expensive :: Gen Item
-expensive =
-  Item
-    <$> (Name <$> element ["oculus", "vive"])
-    <*> (USD <$> integral 1000 2000)
+    STuple ls rs
+      | VTuple lx rx <- x0
+      , VTuple ly ry <- y0
+      ->
+        VTuple (mergeValue rs rx ry) (mergeValue ls lx ly)
 
-order :: Gen Item -> Gen Order
-order gen =
-  Order <$> list 0 50 gen
+    _ ->
+      error $ "Schema mismatch " ++ show (schema, x0, y0)
 
--- | Fails with:
---
--- @
--- λ check prop_total
--- *** Failed! Falsifiable (after 1 test and 113 shrinks):
--- Order []
--- Order [Item (Name "oculus") (USD 1000)]
--- === Not Equal ===
--- USD 1001
--- USD 1000
--- @
---
-prop_total :: Property ()
-prop_total = do
-  x <- forAll (order cheap)
-  y <- forAll (order expensive)
-  total (merge x y) === total x + total y
+genAggregate :: Gen Aggregate
+genAggregate =
+  elements [Minimum, Maximum, Sum]
+
+genSchema :: Gen Aggregate -> Gen Schema
+genSchema gen =
+  let
+    loop n =
+      if n <= 1 then
+        SInt <$> gen
+      else
+        oneof [
+            SInt <$> gen
+          , liftS2 STuple
+              (loop (n `div` 2))
+              (loop (n `div` 2))
+          ]
+  in
+    loop (100 :: Int)
+
+genValue :: Schema -> Gen Value
+genValue = \case
+  SInt _ ->
+    VInt <$> integral 0 100
+  STuple sx sy ->
+    VTuple <$> genValue sx <*> genValue sy
+
+prop_merge_value :: Property ()
+prop_merge_value = do
+  schema <- forAll $ genSchema genAggregate
+  v0 <- forAll $ genValue schema
+  v1 <- forAll $ genValue schema
+
+  let merged = mergeValue schema v0 v1
+
+  counterexample $ show merged
+  assert $ checkValue schema merged
+
+mergeCompare :: Gen Aggregate -> (Value -> Value -> Bool) -> Property ()
+mergeCompare gen cmp = do
+  schema <- forAll $ genSchema gen
+  v0 <- forAll $ genValue schema
+  v1 <- forAll $ genValue schema
+
+  let merged = mergeValue schema v0 v1
+  counterexample $ show merged
+
+  assert $
+    cmp merged v0 &&
+    cmp merged v1
+
+prop_merge_minimum :: Property ()
+prop_merge_minimum = do
+  mergeCompare (pure Minimum) (<=)
+
+prop_merge_maximum :: Property ()
+prop_merge_maximum = do
+  mergeCompare (pure Maximum) (>=)
+
+prop_merge_sum :: Property ()
+prop_merge_sum = do
+  mergeCompare (pure Sum) (>=)
+
+------------------------------------------------------------------------
+-- Example Extra (not sure if this adds value)
+
+mergeFile :: Schema -> [(String, Value)] -> [(String, Value)] -> [(String, Value)]
+mergeFile schema xs0 ys0 =
+  case (xs0, ys0) of
+    ([], _) ->
+      ys0
+
+    (_, []) ->
+      xs0
+
+    ((nx, vx) : xs, (ny, vy) : ys)
+      | nx == ny
+      ->
+        (nx, mergeValue schema vx vy) : mergeFile schema xs ys
+
+      | nx < ny
+      ->
+        (nx, vx) : mergeFile schema xs ys0
+
+      | otherwise
+      ->
+        (ny, vy) : mergeFile schema xs0 ys
+
+genCustomerId :: Gen String
+genCustomerId =
+  printf "C+%04d" <$> int 0 10
+
+genFile :: Schema -> Gen [(String, Value)]
+genFile schema =
+  fmap (Map.toList . Map.fromList) . listOf 1 10 $
+    (,) <$> genCustomerId <*> genValue schema
+
+prop_merge_file :: Property ()
+prop_merge_file = do
+  schema <- forAll $ genSchema genAggregate
+  fileX <- forAll (genFile schema)
+  fileY <- forAll (genFile schema)
+
+  let merged = mergeFile schema fileX fileY
+
+  counterexample $ show merged
+  assert $ all (checkValue schema) (fmap snd merged)
