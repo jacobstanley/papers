@@ -1,22 +1,30 @@
 %!TEX root = ../Main.tex
-\section{Introdution}
+\section{Introduction}
 
-Quickcheck\cite{claessen:quickcheck} is awesome. Give a short into to quickcheck. A key part of the quick check library design is that counterexamples can be shrunk into smaller ones. The Aribrary type class defines two separate methods, one for generating counter examples and one for shrinking them. However, in practice programmers do not provide shrink functions in their arbitrary instances. In practice less than 20 percent of instances on hackage have shrink instances. 
+QuickCheck\cite{claessen:quickcheck} is a shockingly effective tool for validating the initial and ongoing correctness of production software. One of QuickCheck's most compelling features is that when a test failure is found, the failing test case is simplified to a minimal counterexample, through a process called shrinking. This makes it significantly easier to understand why a test has failed.
+
+The Haskell version of QuickCheck, and its derivatives, tackle test input generation and shrinking in a type-directed fashion. This means that the programmer is required to implement an instance of the @Arbitrary@ type class for their data type in order to generate test data for it.
+
+The @Arbitrary@ type class defines two separate methods, one for generating test inputs, and one for shrinking them. However, in practice, programmers rarely provide shrink functions for their @Arbitrary@ instances, thus losing one of QuickCheck's key benefits. Less than 20 percent of @Arbitrary@ instances on Hackage implement shrinking.
 
 \begin{code}
+  newtype Gen a =
+    Gen (StdGen -> a)
+
   class Arbitrary a where
-   arbitrary :: Gen a
-   shrink    :: a -> [a]
+    arbitrary :: Gen a
+    shrink    :: a -> [a]
 \end{code}
 
-\emph{Semantic Shrinking}. Shrinks should be based on the original generator, not just on the structural type. We often want to shrink to a "nice" value rather than the structurally smallest one. For example, dates can be shrunk to a value like 2001-01-01 rather than 0001-01-01. In practice we can handle this using newtype wrappers, but writing code to wrap and unwrap values is tedious. For example, consider a map from @Foo@ to @Bar@ \TODO{better example}. Some shrink don't preserve the semantic meaning of the values they are shrinking.
+Quiviq's QuickCheck for Erlang, Hypothesis for Python, and test.check for Clojure on the other hand, integrate their shrinking capability directly with test data generation. This is likely because it is the only option for dynamically typed languages, but we believe this approach is highly beneficial, even in the context of a strong statically typed language like Haskell.
+
+\emph{Semantic Shrinking}. Shrinks should be based on the original generator, not just on the structural type. We often want to shrink to a "nice" value rather than the structurally smallest one. For example, dates can be shrunk to a value like 2000-01-01 rather than 0001-01-01. In practice we can handle this using newtype wrappers, but writing code to wrap and unwrap values is tedious. For example, consider a map from @Foo@ to @Bar@ \TODO{better example}. Some shrink don't preserve the semantic meaning of the values they are shrinking.
 
 \emph{Splitting} of the random number generator. Shrinking the number of elements in collection structure should effect now new sub-terms are generated. \TODO{need an example}.
 
-
 We make the following contributions:
 \begin{itemize}
-\item Our system automatically provides shrinks when constructing arbitrary instances.
+\item Our system automatically provides shrinks when constructing test data generators.
 
 \item Our system makes it easy to provide shrink functions that take into account the semantic meaning of the data, rather than just its structural type.
 

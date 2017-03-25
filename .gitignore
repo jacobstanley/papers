@@ -10,6 +10,7 @@
 *.fls
 *.log
 *.pdf
+*.dvi
 
 # Haskell
 .cabal-sandbox/
