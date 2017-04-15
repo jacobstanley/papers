@@ -1,7 +1,7 @@
 %!TEX root = ../Main.tex
 \section{Everything is Roses}
 
-Give some examples of trees.
+\TODO{Give some examples of trees. Not sure what would be good here?}
 
 \begin{code}
   data Rose a =
@@ -21,7 +21,7 @@ QuickCheck implements shrinking for properties using a rose tree. A property is 
     Property (Gen (Rose Result))
 \end{code}
 
-A lazy tree is an ideal way to search the space of simplified test cases, but only exposing its construction to the programmer via a type class bound @shrink@ function has a number of problems.
+Lazy trees offer a very clean way to search the space of simplified test cases, but only exposing its construction to the programmer via a type class bound @shrink@ function has a number of problems.
 
 While generators can be combined using the familiar @Functor@ / @Applicative@ / @Monad@ interface, @Arbitrary@ instances cannot. One might think that changing @Arbitrary@ to a data type might solve this problem, but unfortunately the @shrink@ function is invariant, and thus @Arbitrary@ can never be a covariant @Functor@.
 
@@ -33,9 +33,9 @@ While generators can be combined using the familiar @Functor@ / @Applicative@ / 
       }
 \end{code}
 
-We propose that generators themselves should produce trees of values. Not only does this allow generators to implement much more involved shrinking strategies, the covariant nature of rose trees allows us to keep the convenient @Functor@ / @Applicative@ / @Monad@ interface which we know and love.
+We propose that generators themselves should produce a tree. Not only does this allow generators to implement more involved shrinking strategies, the covariant nature of rose trees allows us to keep the convenient @Functor@ / @Applicative@ / @Monad@ interface which we know and love.
 
-(Flesh this out a bit more)
+\TODO{Flesh this out a bit more?}
 
 \begin{code}
   data Gen a =
@@ -55,7 +55,7 @@ In order to test the functions involved in implementing this system, one would n
     | Sum
 
   data Schema =
-      SInt Aggregate
+      SInt Int Int Aggregate
     | SPair Schema Schema
 
   data Value =
@@ -63,23 +63,30 @@ In order to test the functions involved in implementing this system, one would n
     | VPair Value Value
 \end{code}
 
-If we wanted to test a function which requires two values with matching schemas, the obvious thing to do is to generate a schema, then use that to generate two values which comply with the schema. However, implementing this as an @Arbitrary@ instance is anything but obvious.
+If we wanted to test a function which requires two values with matching schemas, the obvious thing to do is to generate a schema, then use that to generate two values which comply with the schema. However, implementing this as an @Arbitrary@ instance requires the creation of a new data type, and implementing the @shrink@ function for this data type is anything but obvious.
 
 \begin{code}
   data TwoValue =
     TwoValue Schema Value Value
 
+  genSInt :: Gen Schema
+  genSInt = do
+    x <- arbitrary
+    y <- arbitrary
+    SInt (min x y) (max x y)
+      <$> elements [Minimum, Maximum, Sum]
+
   genSchema :: Gen Schema
   genSchema =
     oneof [
-        SInt <$> elements [Minimum, Maximum, Sum]
+        genSInt
       , SPair <$> genSchema <*> genSchema
       ]
 
   genValue :: Schema -> Gen Value
   genValue = \case
-    SInt _ ->
-      VInt <$> arbitrary
+    SInt vmin vmax _ ->
+      VInt <$> choose (vmin, vmax)
     SPair sx sy ->
       VPair <$> genValue sx <*> genValue sy
 
@@ -90,5 +97,49 @@ If we wanted to test a function which requires two values with matching schemas,
         <$> genValue schema
         <*> genValue schema
     shrink =
-      -- ???
+      -- ??? TODO should I actually write this out?
+
+  prop_test :: TwoValue -> Property
+  prop_test (TwoValue schema v0 v1) =
+    -- some test
 \end{code}
+
+Because writing shrinkers is difficult, programmers often forgo this step entirely when writing @Arbitrary@ instances. Opting instead to use the default implementation which just returns the empty list. In some cases they may be able to use @genericShrink@, which uses @GHC.Generics@ to automatically derive a shrink function for their data type. This will not, however, take in to account invariants which a data type may have. \TODO{hackage / github results here?}
+
+In our example, the schema @SInt@ specifies the range of values a @VInt@ can take. If we tried to use @genericShrink@ here it would happily shrink to a value which broke the invariants imposed by the schema.
+
+Another problem with the QuickCheck version of our example is that it uses @arbitrary@ to generate @Int@ values for the @SInt@ constructor. This seems like the obvious thing to do, but the @Arbitrary@ instance for @Int@ will only generate values from @0@ to @100@. This may be fine for many situations, but in our case we'd like to test the full range of @Int@. This can easily be done in QuickCheck, but the type-directed approach to generating values entices programmers towards the wrong solution here. \TODO{this implicit decision has actually caused me a lot of pain, with generators not doing what I thought they were doing, not sure how to say this though. I've also found coworkers doing this and not realising that they weren't testing what they thought they were.}
+
+With rose tree generators we can solve all of these problems. Here are the same set of generators constructed using our approach.
+
+\begin{code}
+  genSInt :: Gen Schema
+  genSInt = do
+    x <- integral minBound maxBound
+    y <- integral minBound maxBound
+    SInt (min x y) (max x y)
+      <$> elements [Minimum, Maximum, Sum]
+
+  genSchema :: Gen Schema
+  genSchema =
+    oneof [
+        genSInt
+      , SPair <$> genSchema <*> genSchema
+      ]
+
+  genValue :: Schema -> Gen Value
+  genValue = \case
+    SInt vmin vmax _ ->
+      VInt <$> choose (vmin, vmax)
+    SPair sx sy ->
+      VPair <$> genValue sx <*> genValue sy
+
+  prop_test :: Property ()
+  prop_test = do
+    schema <- forAll genSchema
+    v0 <- forAll $ genValue schema
+    v1 <- forAll $ genValue schema
+    -- some test
+\end{code}
+
+There isn't a lot of difference, but we haven't needed to construct a data type solely for the purpose of making an @Arbitrary@ instance. In addition, because we've escewed our overloaded @arbitrary@ function for explicit combinators, it's obvious that we're testing the whole range of @Int@ when we construct an @SInt@. The key difference though is that we haven't had to think about writing a shrink function, it comes for free, simply by combining generators. Not only that, the shrinks for our values are always guaranteed to obey our schema, by construction.

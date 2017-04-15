@@ -20,7 +20,7 @@ Quiviq's QuickCheck for Erlang, Hypothesis for Python, and test.check for Clojur
 
 \emph{Semantic Shrinking}. Shrinks should be based on the original generator, not just on the structural type. We often want to shrink to a "nice" value rather than the structurally smallest one. For example, dates can be shrunk to a value like 2000-01-01 rather than 0001-01-01. In practice we can handle this using newtype wrappers, but writing code to wrap and unwrap values is tedious. For example, consider a map from @Foo@ to @Bar@ \TODO{better example}. Some shrink don't preserve the semantic meaning of the values they are shrinking.
 
-\emph{Splitting} of the random number generator. Shrinking the number of elements in collection structure should effect now new sub-terms are generated. \TODO{need an example}.
+\emph{Splitting} of the random number generator. Shrinking the number of elements in collection structure should effect now new sub-terms are generated. \TODO{need an example. note to self: this is about making sure we only have the random number effect once per @Gen@ bind, rather than once per tree node. It's nothing to do with splittable (i.e. ReaderT) vs StateT random number generators}.
 
 We make the following contributions:
 \begin{itemize}
