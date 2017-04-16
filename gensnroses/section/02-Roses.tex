@@ -141,7 +141,7 @@ We propose that generators themselves should produce a tree. Not only does this 
 \TODO{Flesh this out a bit more?}
 
 \begin{code}
-  data Gen a =
+  newtype Gen a =
     Gen (StdGen -> Rose a)
 \end{code}
 
@@ -149,7 +149,7 @@ Imagine a general system for storing well-typed data, with built-in aggregation 
 
 In order to test the functions involved in implementing this system, one would need to generate sets of values which have compatible schemas. This is incredibly difficult using a type directed approach to generation and shrinking.
 
-(Not sure if the aggregation part is more than necessary at this point. The fact that the values are aggregates means they are semigroups, so we can talk about merging/appending them together. It also gives us something which is in the schema, but not available in the value, so we can't derive the schema from the value.)
+\TODO{Not sure if the aggregation part is more than necessary at this point. The fact that the values are aggregates means they are semigroups, so we can talk about merging/appending them together. It also gives us something which is in the schema, but not available in the value, so we can't derive the schema from the value.}
 
 \begin{code}
   data Aggregate =

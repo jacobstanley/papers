@@ -1,6 +1,242 @@
 %!TEX root = ../Main.tex
 \section{Details}
 
-Flesh out the details of the new implementation. All the extras. Generators that control how the shrinks work, eg when generating integers as the sample index increases the range of possible values also increases, but always shrinks down to some "nice value".
+QuickCheck has the notion of a \emph{size} parameter, which is varied between test case executions. Smaller sizes are tried first, before gradually increasing the size as further test cases are executed. This helps to produce smaller counterexamples as trivial inputs are tested before more complex ones. It also provides a way for the programmer to avoid diverging when generating recursive data structures. As such, our generators also accept a size parameter when generating values. \TODO{Discussed in original QuickCheck paper: 3.2 Generators for User-Defined Types}
 
-Generator combinators. Randomly pick one of the generators in a list. Or have some corpus of strings, like customer names or product names. Use those examples first then generate random strings. Include diagrams of how the range changes as the size parameter increases.
+\begin{code}
+  newtype Size =
+    Size Int
+
+  newtype Gen a =
+    Gen (Size -> StdGen -> Rose a)
+\end{code}
+
+Concretely, it may help to think of the size parameter as a percentage which never gets to @100@. When the test runner executes the first test case for a property, the size is @0@. The size then increases by one for each test until it gets to @99@ on the 100th test, before reseting to @0@ on the 101st test.
+
+%
+% Size vs Number of Tests
+%
+
+\begin{tikzpicture}
+\begin{axis}[
+    xlabel = Number of Tests
+  , xtick = {1, 100, 200}
+  , ylabel = Size
+  ]
+\addplot[plot-blue, thick] plot coordinates {
+  (1,0)
+  (100,99)
+  (101,0)
+  (200,99)
+};
+\end{axis}
+\end{tikzpicture}
+
+Some of QuickCheck's combinators, such as @listOf@, make use of the size parameter to limit the values they generate. While others, such as @choose@ are unaffected. Unsurprisingly, none of QuickCheck's combinators offer control over how a value shrinks, because shrinking in QuickCheck is handled with the @Arbitrary@ type class.
+
+We provide a full range of combinators for controlling both how a value shrinks, and how it is affected by the size parameter. The workhorse for these combinators is the @Range@ data type.
+
+\begin{code}
+  data Range a =
+    Range a (Size -> (a, a))
+
+  singleton    :: a -> Range a
+
+  constant     :: a -> a -> Range a
+  constantFrom :: a -> a -> a -> Range a
+
+  linear       :: Integral a => a -> a -> Range a
+  linearFrom   :: Integral a => a -> a -> a -> Range a
+\end{code}
+
+A @Range@ consists of an \emph{origin}, which is the value we would like to shrink towards, and a \emph{bounds function}, which calculates the upper and lower bound for a generator, given the current size.
+
+
+%
+% Range.singleton 5
+%
+
+\begin{tikzpicture}
+\begin{axis}[
+    title = singleton 5
+  , xlabel = Size
+  , xtick = {0, 99}
+  , ylabel = Value
+  , ytick = {0, 5, 10}
+  , ymin = -2
+  , ymax = 12
+  , legend style= {
+        at = { (0.05, 0.95) }
+      , anchor = north west
+      }
+  ]
+
+\addplot[plot-blue, thick] plot coordinates {
+  (0,5)
+  (99,5)
+};
+\addlegendentry{Upper \& Lower Bound}
+
+\end{axis}
+\end{tikzpicture}
+
+%
+% Range.constant 0 10
+%
+
+\begin{tikzpicture}
+\begin{axis}[
+    title = constant 0 10
+  , xlabel = Size
+  , xtick = {0, 99}
+  , ylabel = Value
+  , ytick = {0, 5, 10}
+  , ymin = -2
+  , ymax = 12
+  , legend style= {
+        at = { (0.05, 0.5) }
+      , anchor = west
+      }
+  ]
+
+\addplot[plot-blue, thick] plot coordinates {
+  (0,10)
+  (99,10)
+};
+\addlegendentry{Upper Bound}
+
+\addplot[plot-green, thick] plot coordinates {
+  (0,0)
+  (99,0)
+};
+\addlegendentry{Lower Bound}
+
+\node (upper)  at (axis cs:99,10) {};
+\node (origin) at (axis cs:99,0) {};
+\draw[->, gray, thick, dashed] (upper) -- (origin);
+
+\end{axis}
+\end{tikzpicture}
+
+%
+% Range.constantFrom 0 (-100) 100
+%
+
+\begin{tikzpicture}
+\begin{axis}[
+    title = constantFrom 0 (-100) 100
+  , xlabel = Size
+  , xtick = {0, 99}
+  , ylabel = Value
+  , ytick = {-100, 0, 100}
+  , legend style= {
+        at = { (0.05, 0.71) }
+      , anchor = west
+      }
+  ]
+
+\addplot[plot-blue, thick] plot coordinates {
+  (0,100)
+  (99,100)
+};
+\addlegendentry{Upper Bound}
+
+\addplot[plot-orange, thick] plot coordinates {
+  (0,0)
+  (99,0)
+};
+\addlegendentry{Origin}
+
+\addplot[plot-green, thick] plot coordinates {
+  (0,-100)
+  (99,-100)
+};
+\addlegendentry{Lower Bound}
+
+\node (upper)  at (axis cs:99,100) {};
+\node (origin) at (axis cs:99,0) {};
+\node (lower)  at (axis cs:99,-100) {};
+\draw[->, gray, thick, dashed] (upper) -- (origin);
+\draw[->, gray, thick, dashed] (lower) -- (origin);
+
+\end{axis}
+\end{tikzpicture}
+%
+% Range.linear 32 1024
+%
+
+\begin{tikzpicture}
+\begin{axis}[
+    title = linear 32 1024
+  , xlabel = Size
+  , xtick = {0, 99}
+  , ylabel = Value
+  , ytick = {32, 1024}
+  , legend style= {
+        at = { (0.05, 0.95) }
+      , anchor = north west
+      }
+  ]
+
+\addplot[plot-blue, thick] plot coordinates {
+  (0,32)
+  (99,1024)
+};
+\addlegendentry{Upper Bound}
+
+\addplot[plot-green, thick] plot coordinates {
+  (0,32)
+  (99,32)
+};
+\addlegendentry{Lower Bound}
+
+\node (upper)  at (axis cs:99,1024) {};
+\node (origin) at (axis cs:99,32) {};
+\draw[->, gray, thick, dashed] (upper) -- (origin);
+
+\end{axis}
+\end{tikzpicture}
+
+%
+% Range.linearFrom 2000 1970 2100
+%
+
+\begin{tikzpicture}
+\begin{axis}[
+    title = linearFrom 2000 1970 2100
+  , xlabel = Size
+  , xtick = {0, 99}
+  , ylabel = Value
+  , ytick = {1970, 2000, 2100}
+  , legend style= {
+        at = { (0.05, 0.95) }
+      , anchor = north west
+      }
+  ]
+
+\addplot[plot-blue, thick] plot coordinates {
+  (0,2000)
+  (99,2100)
+};
+\addlegendentry{Upper Bound}
+
+\addplot[plot-orange, thick] plot coordinates {
+  (0,2000)
+  (99,2000)
+};
+\addlegendentry{Origin}
+
+\addplot[plot-green, thick] plot coordinates {
+  (0,2000)
+  (99,1970)
+};
+\addlegendentry{Lower Bound}
+
+\node (upper)  at (axis cs:99,2100) {};
+\node (origin) at (axis cs:99,2000) {};
+\node (lower)  at (axis cs:99,1970) {};
+\draw[->, gray, thick, dashed] (upper) -- (origin);
+\draw[->, gray, thick, dashed] (lower) -- (origin);
+
+\end{axis}
+\end{tikzpicture}
