@@ -22,6 +22,10 @@ Concretely, it may help to think of the size parameter as a percentage which nev
     xlabel = Number of Tests
   , xtick = {1, 100, 200}
   , ylabel = Size
+  , ytick = {0, 50, 99}
+  , ylabel style = {
+        at = { (0.05, 0.5) }
+      }
   ]
 \addplot[plot-blue, thick] plot coordinates {
   (1,0)
@@ -34,63 +38,57 @@ Concretely, it may help to think of the size parameter as a percentage which nev
 
 Some of QuickCheck's combinators, such as @listOf@, make use of the size parameter to limit the values they generate. While others, such as @choose@ are unaffected. Unsurprisingly, none of QuickCheck's combinators offer control over how a value shrinks, because shrinking in QuickCheck is handled with the @Arbitrary@ type class.
 
-We provide a full range of combinators for controlling both how a value shrinks, and how it is affected by the size parameter. The workhorse for these combinators is the @Range@ data type.
+We provide a range of combinators for controlling both how a value shrinks, and how it is affected by the size parameter. The workhorse for these combinators is the @Range@ data type.
 
 \begin{code}
   data Range a =
     Range a (Size -> (a, a))
-
-  singleton    :: a -> Range a
-
-  constant     :: a -> a -> Range a
-  constantFrom :: a -> a -> a -> Range a
-
-  linear       :: Integral a => a -> a -> Range a
-  linearFrom   :: Integral a => a -> a -> a -> Range a
 \end{code}
 
-A @Range@ consists of an \emph{origin}, which is the value we would like to shrink towards, and a \emph{bounds function}, which calculates the upper and lower bound for a generator, given the current size.
+A @Range@ consists of an \emph{origin}, which is the value we would like to shrink towards, and a \emph{bounds function}, which calculates the upper and lower bound for a generator, given the current size. On top of this range abstraction, we can build a number of combinators which allow us finer control over the scope of generated values.
 
+\begin{code}
+  singleton :: a -> Range a
+  singleton x =
+    Range x (const (x, x))
+\end{code}
 
-%
-% Range.singleton 5
-%
+@singleton@ constructs a range which always generates the same value. \TODO{not sure if 'singleton' is even worth mentioning? it does give a feel for how Range works I suppose.}
 
-\begin{tikzpicture}
-\begin{axis}[
-    title = singleton 5
-  , xlabel = Size
-  , xtick = {0, 99}
-  , ylabel = Value
-  , ytick = {0, 5, 10}
-  , ymin = -2
-  , ymax = 12
-  , legend style= {
-        at = { (0.05, 0.95) }
-      , anchor = north west
-      }
-  ]
+\begin{code}
+  constant :: a -> a -> Range a
+  constant x y =
+    constantFrom x x y
 
-\addplot[plot-blue, thick] plot coordinates {
-  (0,5)
-  (99,5)
-};
-\addlegendentry{Upper \& Lower Bound}
+  constantFrom :: a -> a -> a -> Range a
+  constantFrom z x y =
+    Range z (const (x, y))
+\end{code}
 
-\end{axis}
-\end{tikzpicture}
+The constant range combinators are unaffected by the size parameter. @constant@ constructs a range which shrinks to the first bound specified. Note that the bounds do not need to be specified as low then high, @constant 10 0@ is a perfectly legal application which means "generate a value between 0 and 10, shrinking towards 10". @constantFrom@ gives slightly more control, it takes an extra argument which specifies the origin to shrink towards.
+
+%-------------------------------------------------------------------------------
+% Plots for constant/constantFrom
 
 %
 % Range.constant 0 10
 %
-
 \begin{tikzpicture}
 \begin{axis}[
     title = constant 0 10
-  , xlabel = Size
+  , title style = {
+        font=\ttfamily
+      }
   , xtick = {0, 99}
-  , ylabel = Value
+  , xlabel = Size
+  , xlabel style = {
+        at = { (0.5, 0.05) }
+      }
   , ytick = {0, 5, 10}
+  , ylabel = Value
+  , ylabel style = {
+        at = { (0.05, 0.5) }
+      }
   , ymin = -2
   , ymax = 12
   , legend style= {
@@ -121,14 +119,22 @@ A @Range@ consists of an \emph{origin}, which is the value we would like to shri
 %
 % Range.constantFrom 0 (-100) 100
 %
-
 \begin{tikzpicture}
 \begin{axis}[
     title = constantFrom 0 (-100) 100
-  , xlabel = Size
+  , title style = {
+        font=\ttfamily
+      }
   , xtick = {0, 99}
-  , ylabel = Value
+  , xlabel = Size
+  , xlabel style = {
+        at = { (0.5, 0.05) }
+      }
   , ytick = {-100, 0, 100}
+  , ylabel = Value
+  , ylabel style = {
+        at = { (0.05, 0.5) }
+      }
   , legend style= {
         at = { (0.05, 0.71) }
       , anchor = west
@@ -161,17 +167,61 @@ A @Range@ consists of an \emph{origin}, which is the value we would like to shri
 
 \end{axis}
 \end{tikzpicture}
+
+% End plots for constant/constantFrom
+%-------------------------------------------------------------------------------
+
+\begin{code}
+  linear :: Integral a => a -> a -> Range a
+  linear x y =
+    linearFrom x x y
+
+  linearFrom :: Integral a => a -> a -> a -> Range a
+  linearFrom z x y =
+    Range z $ \size ->
+      ( clamp x y (scaleLinear size z x)
+      , clamp x y (scaleLinear size z y) )
+
+  -- Not sure if we should include the definition
+  -- of clamp and scaleLinear here?
+\end{code}
+
+The linear range combinators are similar to the constant range combinators except that their bounds scale, away from the origin, linearly with the size.
+
+\begin{code}
+  genSInt :: Gen Schema
+  genSInt = do
+    x <- integral $ linearFrom 0 minBound maxBound
+    y <- integral $ linearFrom 0 minBound maxBound
+    SInt (min x y) (max x y)
+      <$> elements [Minimum, Maximum, Sum]
+\end{code}
+
+%-------------------------------------------------------------------------------
+% Plots for linear/linearFrom
+
 %
 % Range.linear 32 1024
 %
-
 \begin{tikzpicture}
 \begin{axis}[
-    title = linear 32 1024
+    /pgf/number format/.cd
+  , use comma
+  , 1000 sep = {}
+  , title = linear 32 1024
+  , title style = {
+        font=\ttfamily
+      }
   , xlabel = Size
   , xtick = {0, 99}
+  , xlabel style = {
+        at = { (0.5, 0.05) }
+      }
   , ylabel = Value
   , ytick = {32, 1024}
+  , ylabel style = {
+        at = { (0.05, 0.5) }
+      }
   , legend style= {
         at = { (0.05, 0.95) }
       , anchor = north west
@@ -200,14 +250,25 @@ A @Range@ consists of an \emph{origin}, which is the value we would like to shri
 %
 % Range.linearFrom 2000 1970 2100
 %
-
 \begin{tikzpicture}
 \begin{axis}[
-    title = linearFrom 2000 1970 2100
-  , xlabel = Size
+    /pgf/number format/.cd
+  , use comma
+  , 1000 sep = {}
+  , title = linearFrom 2000 1970 2100
+  , title style = {
+        font=\ttfamily
+      }
   , xtick = {0, 99}
-  , ylabel = Value
+  , xlabel = Size
+  , xlabel style = {
+        at = { (0.5, 0.05) }
+      }
   , ytick = {1970, 2000, 2100}
+  , ylabel = Value
+  , ylabel style = {
+        at = { (0.05, 0.5) }
+      }
   , legend style= {
         at = { (0.05, 0.95) }
       , anchor = north west
@@ -240,3 +301,6 @@ A @Range@ consists of an \emph{origin}, which is the value we would like to shri
 
 \end{axis}
 \end{tikzpicture}
+
+% End plots for linear/linearFrom
+%-------------------------------------------------------------------------------
