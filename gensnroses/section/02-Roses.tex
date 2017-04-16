@@ -1,7 +1,110 @@
 %!TEX root = ../Main.tex
 \section{Everything is Roses}
 
-\TODO{Give some examples of trees. Not sure what would be good here?}
+\TODO{Give some examples of trees}
+
+\tikzset{
+    treenode/.style = {
+        circle
+      , font = \sffamily
+      , align = center
+      , text centered
+      , text width = 1.5em
+      , inner sep = 0pt
+      , very thick
+      }
+  , outcome/.style = {
+        treenode
+      , font = \sffamily\bfseries
+      , white
+      , draw = black
+      , fill = black
+      }
+  , shrink/.style = {
+        treenode
+      , black
+      , draw = black
+      }
+}
+
+%
+% I have no idea what I'm doing with this marginbox thing, it just looked weird
+% without it - feel free to fix when the time comes.
+%
+% The nodes which have 'at (x,y)' below have slightly tweaked relative
+% positions, as the default layout assumes a balanced tree, which shrink trees
+% are not.
+%
+\marginbox{-0.5em 1em 0em 1em}{\begin{tikzpicture}[
+    ->
+  , > = stealth'
+  , level/.style = {
+        sibling distance = 3.9cm/#1
+      , level distance = 1cm
+      }
+  ]
+\node [outcome] {5}
+  child {
+    node [shrink] at (2,0) {0}
+  }
+  child {
+    node [shrink] {3}
+    child {
+      node [shrink] {0} 
+    }
+    child {
+      node [shrink] at (-1,0) {2} 
+      child {
+        node [shrink] {0} 
+      }
+      child {
+        node [shrink] {1} 
+        child {
+          node [shrink] {0} 
+        }
+      }
+    }
+  }
+  child {
+    node [shrink] at (-1.65,0) {4}
+    child {
+      node [shrink] at (1,0) {0} 
+    }
+    child {
+      node [shrink] {2} 
+      child {
+        node [shrink] {0} 
+      }
+      child {
+        node [shrink] {1} 
+        child {
+          node [shrink] {0} 
+        }
+      }
+    }
+    child {
+      node [shrink] at (0.3,0) {3} 
+      child {
+        node [shrink] {0} 
+      }
+      child {
+        node [shrink] {2} 
+        child {
+          node [shrink] {0} 
+        }
+        child {
+          node [shrink] {1} 
+          child {
+            node [shrink] {0} 
+          }
+        }
+      }
+    }
+  }
+;
+\end{tikzpicture}}
+
+\TODO{Not sure what text would be good here? I've knocked up the shrink tree for the integer 5.}
 
 \begin{code}
   data Rose a =
@@ -38,7 +141,7 @@ We propose that generators themselves should produce a tree. Not only does this 
 \TODO{Flesh this out a bit more?}
 
 \begin{code}
-  data Gen a =
+  newtype Gen a =
     Gen (StdGen -> Rose a)
 \end{code}
 
@@ -46,7 +149,7 @@ Imagine a general system for storing well-typed data, with built-in aggregation 
 
 In order to test the functions involved in implementing this system, one would need to generate sets of values which have compatible schemas. This is incredibly difficult using a type directed approach to generation and shrinking.
 
-(Not sure if the aggregation part is more than necessary at this point. The fact that the values are aggregates means they are semigroups, so we can talk about merging/appending them together. It also gives us something which is in the schema, but not available in the value, so we can't derive the schema from the value.)
+\TODO{Not sure if the aggregation part is more than necessary at this point. The fact that the values are aggregates means they are semigroups, so we can talk about merging/appending them together. It also gives us something which is in the schema, but not available in the value, so we can't derive the schema from the value.}
 
 \begin{code}
   data Aggregate =
@@ -142,4 +245,4 @@ With rose tree generators we can solve all of these problems. Here are the same 
     -- some test
 \end{code}
 
-There isn't a lot of difference, but we haven't needed to construct a data type solely for the purpose of making an @Arbitrary@ instance. In addition, because we've escewed our overloaded @arbitrary@ function for explicit combinators, it's obvious that we're testing the whole range of @Int@ when we construct an @SInt@. The key difference though is that we haven't had to think about writing a shrink function, it comes for free, simply by combining generators. Not only that, the shrinks for our values are always guaranteed to obey our schema, by construction.
+When it comes to building up generators, the essence isn't a lot of different. However, we haven't needed to construct a data type solely for the purpose of making an @Arbitrary@ instance. In addition, because we've escewed our overloaded @arbitrary@ function for explicit combinators, it's obvious that we're testing the whole range of @Int@ when we construct an @SInt@. The key difference though, is that we haven't had to think about writing a shrink function, it comes for free, simply by combining generators. Not only that, the shrinks for our values are always guaranteed to obey our schema, by construction.
