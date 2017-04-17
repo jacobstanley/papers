@@ -1,5 +1,5 @@
 %!TEX root = ../Main.tex
-\section{Details}
+\section{Ranged Generators}
 
 QuickCheck has the notion of a \emph{size} parameter, which is varied between test case executions. Smaller sizes are tried first, before gradually increasing the size as further test cases are executed. This helps to produce smaller counterexamples as trivial inputs are tested before more complex ones. It also provides a way for the programmer to avoid diverging when generating recursive data structures. As such, our generators also accept a size parameter when generating values. \TODO{Discussed in original QuickCheck paper: 3.2 Generators for User-Defined Types}
 
@@ -8,7 +8,7 @@ QuickCheck has the notion of a \emph{size} parameter, which is varied between te
     Size Int
 
   newtype Gen a =
-    Gen (Size -> StdGen -> Rose a)
+    Gen (Size -> StdGen -> Tree a)
 \end{code}
 
 Concretely, it may help to think of the size parameter as a percentage which never gets to @100@. When the test runner executes the first test case for a property, the size is @0@. The size then increases by one for each test until it gets to @99@ on the 100th test, before reseting to @0@ on the 101st test.
@@ -53,7 +53,7 @@ A @Range@ consists of an \emph{origin}, which is the value we would like to shri
     Range x (const (x, x))
 \end{code}
 
-@singleton@ constructs a range which always generates the same value. \TODO{not sure if 'singleton' is even worth mentioning? it does give a feel for how Range works I suppose.}
+@singleton@ constructs a range which always generates the same value.
 
 \begin{code}
   constant :: a -> a -> Range a
@@ -63,9 +63,13 @@ A @Range@ consists of an \emph{origin}, which is the value we would like to shri
   constantFrom :: a -> a -> a -> Range a
   constantFrom z x y =
     Range z (const (x, y))
+
+  constantBounded :: (Bounded a, Num a) => Range a
+  constantBounded =
+    constantFrom 0 minBound maxBound
 \end{code}
 
-The constant range combinators are unaffected by the size parameter. @constant@ constructs a range which shrinks to the first bound specified. Note that the bounds do not need to be specified as low then high, @constant 10 0@ is a perfectly legal application which means "generate a value between 0 and 10, shrinking towards 10". @constantFrom@ gives slightly more control, it takes an extra argument which specifies the origin to shrink towards.
+The constant range combinators are unaffected by the size parameter. @constant@ constructs a range which shrinks to the first bound specified. Note that the bounds do not need to be specified as low then high, @constant 10 0@ is a perfectly legal application which means "generate a value between 0 and 10, shrinking towards 10". @constantFrom@ gives slightly more control, it takes an extra argument which specifies the origin to shrink towards. @constantBounded@ uses the @Bounded@ instance for a type to determine the range.
 
 %-------------------------------------------------------------------------------
 % Plots for constant/constantFrom
@@ -182,19 +186,91 @@ The constant range combinators are unaffected by the size parameter. @constant@ 
       ( clamp x y (scaleLinear size z x)
       , clamp x y (scaleLinear size z y) )
 
+  linearBounded :: (Bounded a, Integral a) => Range a
+  linearBounded =
+    constantFrom 0 minBound maxBound
+
   -- Not sure if we should include the definition
   -- of clamp and scaleLinear here?
 \end{code}
 
 The linear range combinators are similar to the constant range combinators except that their bounds scale, away from the origin, linearly with the size.
 
+Now we have introduced range combinators, we can see how they can be used to provide better control over generated values. QuickCheck has a number of combinators for generating lists, @listOf@, @listOf1@, and @vectorOf@. These can be replaced with a single @list@ combinator, using ranges.
+
+\begin{code}
+  list :: Range Int -> Gen a -> Gen [a]
+
+  listOf =
+    list (linear 0 99)
+
+  listOf1 =
+    list (linear 1 99)
+
+  vectorOf n =
+    list (singleton n)
+\end{code}
+
+We can also go back to our @SInt@ generator, and improve the shrinking, changing @integral@ to take a @Range@ instead of two values. Now @x@ and @y@ will shrink to @0@ instead of @minBound@.
+
 \begin{code}
   genSInt :: Gen Schema
   genSInt = do
-    x <- integral $ linearFrom 0 minBound maxBound
-    y <- integral $ linearFrom 0 minBound maxBound
+    x <- integral linearBounded
+    y <- integral linearBounded
     SInt (min x y) (max x y)
       <$> elements [Minimum, Maximum, Sum]
+\end{code}
+
+An interesting use case of range combinators is when generating gregorian calendar years. We can check a progressively larger range of years while always shrinking to a nice year, like @2000@.
+
+\begin{code}
+  genYear :: Gen Int
+  genYear =
+    integral (linearFrom 2000 1600 3000)
+\end{code}
+
+We could achieve this using a @newtype@ in QuickCheck, but it is far more cumbersome.
+
+\begin{code}
+  newtype Year =
+    Year {
+        unYear :: Int
+      }
+
+  instance Arbitrary Year where
+    arbitrary =
+      sized $ \n ->
+        let
+          lo = n * ((1600 - 2000) `quot` 99)
+          hi = n * ((3000 - 2000) `quot` 99)
+        in
+          choose (lo, hi)
+
+    shrink x =
+      map (+ 2000) $ shrinkIntegral (x - 2000)
+\end{code}
+
+Worse still, if we wanted to use this to generate and shrink a data type from a third-party library, which doesn't happen to use our @newtype@, we'd have to wrap it then unwrap it to access the shrinking functionality.
+
+\begin{code}
+  data SomeRecord =
+    SomeRecord Int
+
+  instance Arbitrary SomeRecord where
+    arbitrary =
+      SomeRecord . unYear <$> arbitrary
+
+    shrink (SomeRecord x) =
+      map (SomeRecord . unYear) $ shrink (Year x)
+\end{code}
+
+With our system, this is easy.
+
+\begin{code}
+  genSomeRecord :: Gen SomeRecord
+  genSomeRecord =
+    SomeRecord <$> genYear
 \end{code}
 
 %-------------------------------------------------------------------------------
