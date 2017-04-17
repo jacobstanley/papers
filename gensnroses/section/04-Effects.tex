@@ -1,0 +1,62 @@
+%!TEX root = ../Main.tex
+\section{Effectful Generators}
+
+One the limitations of generators in QuickCheck is that they cannot have effects. We lift this restriction by making our rose tree a monad transformer.
+
+\begin{code}
+  newtype Tree m a =
+    Tree (m (Node m a))
+
+  data Node m a =
+    Node a [Tree m a]
+\end{code}
+
+This has an immediate payoff. While discards are implementing in QuickCheck using exceptions, we can simply combine our @Tree@ with a @MaybeT@. This provides discards and filtering of generators via the @Alternative@ / @MonadPlus@ class. \TODO{discuss what discards are?}
+
+\begin{code}
+  newtype Gen m a =
+    Gen (Size -> StdGen -> Tree (MaybeT m) a)
+
+  discard :: Monad m => Gen m a
+  discard =
+    empty -- or mzero
+
+  filter :: Monad m => (a -> Bool) -> Gen m a -> Gen m a
+  filter p gen =
+    mfilter p gen <|> filter p gen
+    -- actual implementation more complex
+    -- to avoid looping forever
+
+  suchThat :: Monad m => Gen m a -> (a -> Bool) -> Gen m a
+  suchThat =
+    flip filter
+\end{code}
+
+\TODO{Discuss generators which use @ReaderT@}
+
+\TODO{Example of a @Gen IO@ which picks a random customer-id from a file.}
+
+\TODO{Show that properties are @Gen m Result@, and so we get monadic testing this way.}
+
+PureScript is a strict dialect of Haskell which compiles to JavaScript. Because it tries to keep as closely as possible to JavaScript's execution model, its runtime lacks threads of any kind. Instead it opts to provide concurrency by abstracting over continuations using the @Aff@ monad.
+
+\begin{code}
+  data Error -- JavaScript Error
+
+  newtype Aff a =
+    Aff (ExceptT Error (ContT () IO a))
+\end{code}
+
+Say we wanted to test a function which fetches a response from a url.
+
+\begin{code}
+  newtype Url =
+    Url String
+
+  newtype Response =
+    Response String
+
+  ajaxGet :: Url -> Aff Response
+\end{code}
+
+\TODO{Make sure this is a use case which QuickCheck's monadic testing won't handle elegantly.}

@@ -50,17 +50,17 @@
   child {
     node [shrink] {3}
     child {
-      node [shrink] {0} 
+      node [shrink] {0}
     }
     child {
-      node [shrink] at (-1,0) {2} 
+      node [shrink] at (-1,0) {2}
       child {
-        node [shrink] {0} 
+        node [shrink] {0}
       }
       child {
-        node [shrink] {1} 
+        node [shrink] {1}
         child {
-          node [shrink] {0} 
+          node [shrink] {0}
         }
       }
     }
@@ -68,34 +68,34 @@
   child {
     node [shrink] at (-1.65,0) {4}
     child {
-      node [shrink] at (1,0) {0} 
+      node [shrink] at (1,0) {0}
     }
     child {
-      node [shrink] {2} 
+      node [shrink] {2}
       child {
-        node [shrink] {0} 
+        node [shrink] {0}
       }
       child {
-        node [shrink] {1} 
+        node [shrink] {1}
         child {
-          node [shrink] {0} 
+          node [shrink] {0}
         }
       }
     }
     child {
-      node [shrink] at (0.3,0) {3} 
+      node [shrink] at (0.3,0) {3}
       child {
-        node [shrink] {0} 
+        node [shrink] {0}
       }
       child {
-        node [shrink] {2} 
+        node [shrink] {2}
         child {
-          node [shrink] {0} 
+          node [shrink] {0}
         }
         child {
-          node [shrink] {1} 
+          node [shrink] {1}
           child {
-            node [shrink] {0} 
+            node [shrink] {0}
           }
         }
       }
@@ -107,8 +107,8 @@
 \TODO{Not sure what text would be good here? I've knocked up the shrink tree for the integer 5.}
 
 \begin{code}
-  data Rose a =
-    Node a [Rose a]
+  data Tree a =
+    Node a [Tree a]
 \end{code}
 
 QuickCheck implements shrinking for properties using a rose tree. A property is just a generator which produces a tree of results. The root of the tree is the result of the randomly generated test case, while the shrinks are the sub-trees.
@@ -121,7 +121,7 @@ QuickCheck implements shrinking for properties using a rose tree. A property is 
       }
 
   newtype Property =
-    Property (Gen (Rose Result))
+    Property (Gen (Tree Result))
 \end{code}
 
 Lazy trees offer a very clean way to search the space of simplified test cases, but only exposing its construction to the programmer via a type class bound @shrink@ function has a number of problems.
@@ -142,7 +142,7 @@ We propose that generators themselves should produce a tree. Not only does this 
 
 \begin{code}
   newtype Gen a =
-    Gen (StdGen -> Rose a)
+    Gen (StdGen -> Tree a)
 \end{code}
 
 Imagine a general system for storing well-typed data, with built-in aggregation capabilities. Such a system might be used in the context of feature engineering, for a machine learning platform, such as the one we have developed at Ambiata.
@@ -166,11 +166,21 @@ In order to test the functions involved in implementing this system, one would n
     | VPair Value Value
 \end{code}
 
-If we wanted to test a function which requires two values with matching schemas, the obvious thing to do is to generate a schema, then use that to generate two values which comply with the schema. However, implementing this as an @Arbitrary@ instance requires the creation of a new data type, and implementing the @shrink@ function for this data type is anything but obvious.
+If we wanted to test a function which requires two sets of values with matching schemas, the obvious thing to do is to generate a schema, then use that to generate values which comply with the schema. To do this, we will use a number of QuickCheck's @Gen@ combinators. @elements@ selects a random value from a list of options, @oneof@ executes a random generator from the input list and @choose@ generates a value in the specified range.
+
+\begin{code}
+  elements :: [a] -> Gen a
+
+  oneof :: [Gen a] -> Gen a
+
+  choose :: Random a => (a, a) -> Gen a
+\end{code}
+
+Implementing an @Arbitrary@ instance for this scenario requires the creation of a new data type, and the implementation of the @shrink@ function for this data type is anything but obvious.
 
 \begin{code}
   data TwoValue =
-    TwoValue Schema Value Value
+    TwoValue Schema [Value] [Value]
 
   genSInt :: Gen Schema
   genSInt = do
@@ -197,13 +207,13 @@ If we wanted to test a function which requires two values with matching schemas,
     arbitrary = do
       schema <- genSchema
       TwoValue schema
-        <$> genValue schema
-        <*> genValue schema
+        <$> listOf (genValue schema)
+        <*> listOf (genValue schema)
     shrink =
       -- ??? TODO should I actually write this out?
 
   prop_test :: TwoValue -> Property
-  prop_test (TwoValue schema v0 v1) =
+  prop_test (TwoValue schema vs0 vs1) =
     -- some test
 \end{code}
 
@@ -213,7 +223,17 @@ In our example, the schema @SInt@ specifies the range of values a @VInt@ can tak
 
 Another problem with the QuickCheck version of our example is that it uses @arbitrary@ to generate @Int@ values for the @SInt@ constructor. This seems like the obvious thing to do, but the @Arbitrary@ instance for @Int@ will only generate values from @0@ to @100@. This may be fine for many situations, but in our case we'd like to test the full range of @Int@. This can easily be done in QuickCheck, but the type-directed approach to generating values entices programmers towards the wrong solution here. \TODO{this implicit decision has actually caused me a lot of pain, with generators not doing what I thought they were doing, not sure how to say this though. I've also found coworkers doing this and not realising that they weren't testing what they thought they were.}
 
-With rose tree generators we can solve all of these problems. Here are the same set of generators constructed using our approach.
+With rose tree generators we can solve these problems. Because we need to provide shrinking as well as input generation, some of our combinators are slightly different to QuickCheck. While QuickCheck has a single @choose@ combinator for generating values in a range, we have a number of different ones. This is because we need to know more about a type in order to provide a shrinker for it.
+
+\begin{code}
+  integral :: Integral a => a -> a -> Gen a
+
+  realFloat :: RealFloat a => a -> a -> Gen a
+
+  enum :: Enum a => a -> a -> Gen a
+\end{code}
+
+Here are the same set of generators constructed using our approach.
 
 \begin{code}
   genSInt :: Gen Schema
@@ -233,15 +253,15 @@ With rose tree generators we can solve all of these problems. Here are the same 
   genValue :: Schema -> Gen Value
   genValue = \case
     SInt vmin vmax _ ->
-      VInt <$> choose (vmin, vmax)
+      VInt <$> integral vmin vmax
     SPair sx sy ->
       VPair <$> genValue sx <*> genValue sy
 
   prop_test :: Property ()
   prop_test = do
     schema <- forAll genSchema
-    v0 <- forAll $ genValue schema
-    v1 <- forAll $ genValue schema
+    vs0 <- forAll $ listOf (genValue schema)
+    vs1 <- forAll $ listOf (genValue schema)
     -- some test
 \end{code}
 
